@@ -6,7 +6,7 @@ Unzip the file
 
 Go to the folder with the terminal
 
-Compile the program with g++ or any compile you want, remember to link SFML or it won't work
+Compile the program with g++ or any compiler you want, remember to link SFML or it won't work
 
 Run the executable
 
