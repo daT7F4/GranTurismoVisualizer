@@ -232,16 +232,16 @@ int main()
     {
       i2 = d3[i + 2];
       laps[i2] = i;
-      cout << i2 << " " << laps[i2] << endl;
     }
   }
   lapIndex = laps[lap];
+  laps[i2 + 1] = 1;
 
   //****************CALCULATE AVERAGES*****************//
 
-  i = 1;
+  i = 0;
   float avg1, avg2;
-  while (laps[i] != 0)
+  while (laps[i] != 1)
   {
     for (i2 = laps[i]; i2 < laps[i + 1]; i2 += packetLength)
     {
@@ -253,6 +253,7 @@ int main()
     avg1 = 0;
     avg2 = 0;
     i++;
+    cout << i2 << endl;
   }
 
   //****************START WINDOW RENDER****************//
@@ -313,13 +314,13 @@ int main()
       }
     }
     if (keys[0])
-      YOff++;
+      YOff += 10 / zoom;
     if (keys[1])
-      XOff++;
+      XOff += 10 / zoom;
     if (keys[2])
-      YOff--;
+      YOff -= 10 / zoom;
     if (keys[3])
-      XOff--;
+      XOff -= 10 / zoom;
     if (keys[4])
       RotX += 0.01;
     if (keys[5])
@@ -366,15 +367,18 @@ int main()
     window.draw(drawGauge(1920 - 440, 34, 200, d2[lapIndex + 8], d1[lapIndex + 1] * 3.6));
     window.draw(drawText(1920 - 435, 34, 24, to_string((int)(d1[lapIndex + 1] * 3.6)), 1));
 
-    window.draw(drawText(1920 - 220, 68, 24, "kPa", 1));
+    window.draw(drawText(1920 - 220, 68, 24, "Boost Pressure", 1));
     window.draw(drawGauge(1920 - 220, 94, 200, 6, d1[lapIndex + 7]));
     window.draw(drawText(1920 - 215, 94, 24, to_string(d1[lapIndex + 7]), 1));
 
-    window.draw(drawText(1920 - 440, 68, 24, "Bar", 1));
+    window.draw(drawText(1920 - 440, 68, 24, "Oil Pressure", 1));
     window.draw(drawGauge(1920 - 440, 94, 200, 8, d2[lapIndex + 7]));
     window.draw(drawText(1920 - 435, 94, 24, to_string(d2[lapIndex + 7]), 1));
 
-    window.draw(drawText(1800, 8, 24, "Gear: " + to_string((int) d3[lapIndex + 1]), 1));
+    if (d3[lapIndex + 1] != 15)
+      window.draw(drawText(1800, 8, 24, "Gear: " + to_string((int)d3[lapIndex + 1]), 1));
+    else
+      window.draw(drawText(1800, 8, 24, "Gear: N", 1));
 
     window.draw(drawSuspension(1000, 30, 80, d1[lapIndex + 3]));
     window.draw(drawWheel(1000, d3[lapIndex + 5]));
