@@ -10,6 +10,8 @@ Compile the program with g++ or any compiler you want, remember to link SFML or 
 
 Run the executable
 
+(If you get error code 11, you may have forgotten the data.txt file or it has been renamed)
+
 # How to move around
 W,A,S,D: Move around
 
