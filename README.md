@@ -15,11 +15,15 @@ Run the executable
 # How to move around
 W,A,S,D: Move around
 
-Z,X: Zoom in, Zoom Out (you need to zoom in or else you won't see anything)
+Z,X / Scroll: Zoom in, Zoom Out (you need to zoom in or else you won't see anything)
 
 Arrow keys: Rotate
 
 Space: Turn on/off the replay
+
+1, 2: Change laps
+
+C: Change render mode
 
 # Where to get the data from
 Code I had published (GranTurismoRecorder)
