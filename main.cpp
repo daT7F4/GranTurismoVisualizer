@@ -6,9 +6,11 @@
 #include <cmath>
 #include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
+#include <SFML/System.hpp>
 
 sf::Font font;
 sf::Text text;
+sf::Clock fps;
 
 using namespace std;
 using namespace sf;
@@ -73,7 +75,7 @@ RectangleShape convertToLengthAndRotation(double x1, double y1, double x2, doubl
   float length = sqrtf(pow((x1 - x2), 2) + pow((y1 - y2), 2));
   float dir = atan2(y1 - y2, x1 - x2) * 180 / 3.141592653589793234338327950288;
   RectangleShape line;
-  line.setPosition(Vector2f(x1 * zoom, y1 * zoom));
+  line.setPosition(Vector2f(x1 * zoom + 960, y1 * zoom + 540));
   line.setSize(Vector2f(length * zoom, thicc));
   line.rotate(dir);
   if (displaySetting)
@@ -143,8 +145,8 @@ RectangleShape drawPedalInput(int x, int y, int val, Color color)
 
 string convertToTimestamp()
 {
-  int millis = abs((int)floorf((lapIndex - laps[lap]) / packetLength * 16) % 1000);
-  int sec = abs((int)floorf((lapIndex - laps[lap]) / (packetLength * 60)) % 60);
+  int millis = abs((int)floorf((lapIndex - laps[lap]) / packetLength) % 60 * 16.6666666666);
+  int sec = abs((int)floorf((lapIndex - laps[lap]) / packetLength) % 3600 / 60);
   string min = to_string(abs((int)floorf((lapIndex - laps[lap]) / (packetLength * 3600))));
   string temp1, temp2;
   if (millis < 100)
@@ -269,6 +271,7 @@ int main()
   }
 
   //****************START WINDOW RENDER****************//
+  Time elapsed1 = fps.getElapsedTime();
   RenderWindow window(VideoMode(1920, 1080), "Gran Turismo Visulalizer");
   window.setVerticalSyncEnabled(true);
   window.setKeyRepeatEnabled(false);
@@ -284,7 +287,7 @@ int main()
         window.close();
       if (event.type == sf::Event::MouseWheelScrolled)
         zoom += event.mouseWheelScroll.delta;
-      if (event.type == sf::Event::KeyPressed && clock() > 0.5)
+      if (event.type == sf::Event::KeyPressed)
       {
         if (event.key.code == sf::Keyboard::W)
           keys[0] = true;
@@ -401,7 +404,7 @@ int main()
 
     window.draw(drawText(1920 - 220, 68, 24, "Boost Pressure", 1));
     window.draw(drawGauge(1920 - 220, 94, 200, 6, d1[lapIndex + 7]));
-    window.draw(drawText(1920 - 215, 94, 24, to_string(d1[lapIndex + 7]), 1));
+    window.draw(drawText(1920 - 215, 94, 24, to_string(d1[lapIndex + 7] - 1), 1));
 
     window.draw(drawText(1920 - 440, 68, 24, "Oil Pressure", 1));
     window.draw(drawGauge(1920 - 440, 94, 200, 8, d2[lapIndex + 7]));
@@ -435,6 +438,9 @@ int main()
     window.draw(drawPedalInput(1830, 277, d1[lapIndex + 2], Color(0, 255, 0)));
     window.draw(drawPedalInput(1850, 277, d2[lapIndex + 2], Color(255, 0, 0)));
     window.draw(drawPedalInput(1880, 277, d3[lapIndex + 8], Color(0, 0, 255)));
+
+    Time elapsed1 = fps.restart();
+    window.draw(drawText(0, 960, 24, to_string((int)(1 / elapsed1.asSeconds())) + " FPS", 1));
 
     window.display();
     if (replay)
