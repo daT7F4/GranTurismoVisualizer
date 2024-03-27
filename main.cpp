@@ -69,6 +69,14 @@ void CompleteRotation(float x, float y, float z)
   ConvertDimensions(prez, prey, prez, FocalLength);
 }
 
+void CompleteRotation(float x, float y, float z, float RX, float RY, float RZ, int FL)
+{
+  rotateX(x, y, z, RX);
+  rotateY(prex, prey, prez, RY);
+  rotateZ(prex, prey, prez, RZ);
+  ConvertDimensions(prez, prey, prez, FL);
+}
+
 RectangleShape convertToLengthAndRotation(double x1, double y1, double x2, double y2, int thicc, int i, float speed, float max)
 {
   CompleteRotation(d1[lapIndex], d3[lapIndex], d2[lapIndex]);
@@ -239,7 +247,7 @@ int main()
   //******************GET LAP INDEXES******************//
 
   DataLength = d1.size();
-  i2 = 0;
+  i2 = 1;
   for (int i = 0; i < DataLength; i += packetLength)
   {
     if (i2 != d3[i + 2])
@@ -262,7 +270,8 @@ int main()
       avg1 += (d1[i2 + 1] * 3.6) / ((laps[i + 1] - laps[i]) / packetLength);
       avg2 += (d1[i2 + 2] / 2.55) / ((laps[i + 1] - laps[i]) / packetLength);
     }
-    AvgSpeed[i] = avg1;
+    if(avg1 < 2000.0)
+      AvgSpeed[i] = avg1;
     AvgThrottle[i] = avg2;
     avg1 = 0;
     avg2 = 0;
@@ -311,13 +320,17 @@ int main()
           window.close();
         if (event.key.code == sf::Keyboard::Num1)
         {
-          lap--;
-          lapIndex = laps[lap];
+          if(lap != 0){
+            lap--;
+            lapIndex = laps[lap];
+          }
         }
         if (event.key.code == sf::Keyboard::Num2)
         {
-          lap++;
-          lapIndex = laps[lap];
+          if(lap != d3[lapIndex + 7]){
+            lap++;
+            lapIndex = laps[lap];
+          }
         }
         if (event.key.code == sf::Keyboard::C)
           displaySetting = !displaySetting;
@@ -385,10 +398,16 @@ int main()
     }
     window.draw(background(5, 5, 370, 185));
 
-    window.draw(drawText(10, 5, 24, "Lap: " + to_string(lap), 1));
+    window.draw(drawText(10, 5, 24, "Lap: " + to_string(lap) + " of " + to_string((int)d3[lapIndex + 7]), 1));
     window.draw(drawText(10, 35, 24, "Current: " + convertToTimestamp(), 1));
-    window.draw(drawText(10, 65, 24, "Last: " + last[lap - 1], 1));
-    window.draw(drawText(10, 95, 24, "Best: " + best[lap - 1], 1));
+    if(last[lap - 1] != "00:00.001")
+      window.draw(drawText(10, 65, 24, "Last: " + last[lap - 1], 1));
+    else
+      window.draw(drawText(10, 65, 24, "Last: --:--.---", 1));
+    if(best[lap - 1] != "00:00.001")
+      window.draw(drawText(10, 95, 24, "Best: " + best[lap - 1], 1));
+    else
+      window.draw(drawText(10, 95, 24, "Best: --:--.---", 1));
     window.draw(drawText(10, 125, 24, "Avg Speed: " + to_string(AvgSpeed[lap]) + "km/h", 1));
     window.draw(drawText(10, 155, 24, "Avg Throttle: " + to_string(AvgThrottle[lap]) + "%", 1));
 
@@ -448,8 +467,10 @@ int main()
       lapIndex += packetLength;
       if (lapIndex > laps[lap + 1])
       {
-        if (laps[lap] != 0)
+        if (laps[lap] == 0)
         {
+          lap--;
+        } else{
           lap++;
         }
       }
