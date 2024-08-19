@@ -11,17 +11,20 @@
 sf::Font font;
 sf::Text text;
 sf::Clock fps;
+sf::Texture timeBack;
 
 using namespace std;
 using namespace sf;
 
-float prex, prey, prez, ConX, ConY;
-float RotX, RotY, RotZ;
-float WY, zoom;
-int XOff = 720, YOff = 540, ZOff, lap = 1, lapIndex;
+float prex, prey, prez, ConX, ConY, x;
+float RotX, RotY = -90, RotZ;
+float WY, zoom = 0.5;
+int XOff = 0, YOff = 0, ZOff, lap = 1;
+float delta;
+uint64_t lapIndex, singleLapIndex;
 
 int FocalLength = 2000;
-int packetLength = 13;
+int packetLength = 15;
 string line;
 
 float AvgSpeed[200], AvgThrottle[200];
@@ -33,6 +36,18 @@ vector<float> d2;
 vector<float> d3;
 
 bool displaySetting = true;
+
+int InfoX = 5, InfoY = 5;
+int CarDataX = 1435, CarDataY = 5;
+int WheelDataX = 1620, WheelDataY = 140; // 1615 - 1435 = 180
+int PedalDataX = 1825, PedalDataY = 140;
+int AssistX = 1435, AssistY = 140;
+bool infoT, carT, wheelT, pedalT, seekT, AssistT, TrackT;
+int relativeX, relativeY;
+
+bool mouseState = false;
+
+double PI = 3.141592653589793234338327950288;
 
 void rotateX(float x, float y, float z, float XRot)
 {
@@ -77,15 +92,14 @@ void CompleteRotation(float x, float y, float z, float RX, float RY, float RZ, i
   ConvertDimensions(prez, prey, prez, FL);
 }
 
-RectangleShape convertToLengthAndRotation(double x1, double y1, double x2, double y2, int thicc, int i, float speed, float max)
+RectangleShape drawTrack(double x1, double y1, double x2, double y2, int thicc, int i, float speed, float max, float rot)
 {
-  CompleteRotation(d1[lapIndex], d3[lapIndex], d2[lapIndex]);
+  CompleteRotation(d1[lapIndex], d3[lapIndex], d2[lapIndex] * 5);
   float length = sqrtf(pow((x1 - x2), 2) + pow((y1 - y2), 2));
-  float dir = atan2(y1 - y2, x1 - x2) * 180 / 3.141592653589793234338327950288;
+  float dir = atan2(y1 - y2, x1 - x2) * 180 / PI;
   RectangleShape line;
   line.setPosition(Vector2f(x1 * zoom + 960, y1 * zoom + 540));
   line.setSize(Vector2f(length * zoom, thicc));
-  line.rotate(dir);
   if (displaySetting)
     line.setFillColor(Color(d2[i + 2], d1[i + 2], 0));
   else
@@ -95,16 +109,22 @@ RectangleShape convertToLengthAndRotation(double x1, double y1, double x2, doubl
   {
     line.setFillColor(Color(255, 255, 255));
     line.setSize(Vector2f(2 * zoom, thicc));
+    line.rotate((rot + 1) * -180 - 90);
+  }
+  else
+  {
+    line.rotate(dir);
   }
   return line;
 }
 
-Text drawText(int x, int y, int size, string t, bool centerAllign)
+Text drawText(int x, int y, int size, string t, Color color, bool centerAllign)
 {
   Text text;
   text.setFont(font);
   text.setString(t);
   text.setCharacterSize(size);
+  text.setFillColor(color);
   FloatRect bounds = text.getLocalBounds();
   if (centerAllign)
     text.setPosition(Vector2f(x, y));
@@ -151,6 +171,23 @@ RectangleShape drawPedalInput(int x, int y, int val, Color color)
   return pedal;
 }
 
+RectangleShape drawRect(int x, int y, int w, int h, Color color)
+{
+  RectangleShape rect;
+  rect.setPosition(Vector2f(x, y));
+  rect.setSize(Vector2f(w, h));
+  rect.setFillColor(color);
+  return rect;
+}
+
+CircleShape drawCircle(int x, int y, int r, Color color)
+{
+  CircleShape circle(r);
+  circle.setPosition(Vector2f(x, y));
+  circle.setFillColor(color);
+  return circle;
+}
+
 string convertToTimestamp()
 {
   int millis = abs((int)floorf((lapIndex - laps[lap]) / packetLength) % 60 * 16.6666666666);
@@ -160,26 +197,16 @@ string convertToTimestamp()
   if (millis < 100)
   {
     if (millis < 10)
-    {
       temp1 = "00" + to_string(millis);
-    }
     else
-    {
       temp1 = "0" + to_string(millis);
-    }
   }
   else
-  {
     temp1 = to_string(millis);
-  }
   if (sec < 10)
-  {
     temp2 = "0" + to_string(sec);
-  }
   else
-  {
     temp2 = to_string(sec);
-  }
   return min + ":" + temp2 + "." + temp1;
 }
 
@@ -192,55 +219,75 @@ RectangleShape background(int x, int y, int w, int h)
   return ground;
 }
 
+float TyreDistanceRelativity(float radius, float rps, float speed)
+{
+  return 2 * PI * radius * rps;
+}
+
+void lapCheck()
+{
+  if (lapIndex > laps[lap + 1])
+  {
+    lap++;
+  }
+  else if (lapIndex < laps[lap])
+  {
+    lap--;
+  }
+}
+
+float limit(float x){
+  if(x > 255){
+    return 255;
+  } else{
+    return x;
+  }
+}
+
+string average(float value, int decimals) {
+    ostringstream out;
+    out << fixed << setprecision(decimals) << value;
+    return out.str();
+}
+
 int main()
 {
+
   //*********************READ FILE*********************//
 
   int DataLength = 0;
   ifstream Data("data.txt");
-  int lineCount = 0;
   int i = 0;
-  int i2 = 0;
+  int i2 = -1;
   int lastLap = 0;
   bool change;
+  string la;
   while (getline(Data, line))
   {
-    i = 0;
-    i2 = 0;
-
-    while (line[i] != ' ')
-    {
-      i++;
+    string input = line.substr(1, line.size() - 2);
+    if((i % packetLength) == 9 && line != la){
+      i2++;
+      la = line;
+      last[i2] = line.substr(1, 10);
+      best[i2] = line.substr(12, 10);
+      cout << i << " " << last[i2] << " " << best[i2] << endl;
     }
-    d1.push_back((float)stof(line.substr(1, i - 1).c_str()));
-    if (lineCount % packetLength == 9 && lastLap != d3[lineCount - 7])
+    size_t pos;
+    for (auto &c : input)
     {
-      change = true;
-      last[lastLap] = line.substr(1, i - 2);
+      if (!isdigit(c) && c != '.' && c != '-' && c != ':')
+      {
+        c = ' ';
+      }
     }
+    istringstream iss(input);
+    double x, y, z;
+    iss >> x >> y >> z;
 
+    d1.push_back(x);
+    d2.push_back(y);
+    d3.push_back(z);
     i++;
-    i2 = i;
-    while (line[i] != ' ')
-    {
-      i++;
-    }
-    d2.push_back((float)stof(line.substr(i2, i - i2).c_str()));
-    if (change)
-    {
-      best[lastLap] = line.substr(i2, i - i2 - 1);
-      lastLap = d3[lineCount - 7];
-    }
-    change = false;
-
-    i++;
-    i2 = i;
-    while (line[i] != '>')
-    {
-      i++;
-    }
-    d3.push_back((float)stof(line.substr(i2, i - i2).c_str()));
-    lineCount++;
   }
   Data.close();
 
@@ -256,6 +303,7 @@ int main()
       laps[i2] = i;
     }
   }
+  DataLength /= packetLength;
   lapIndex = laps[lap];
   laps[i2 + 1] = 1;
 
@@ -270,21 +318,20 @@ int main()
       avg1 += (d1[i2 + 1] * 3.6) / ((laps[i + 1] - laps[i]) / packetLength);
       avg2 += (d1[i2 + 2] / 2.55) / ((laps[i + 1] - laps[i]) / packetLength);
     }
-    if(avg1 < 2000.0)
+    if (avg1 < 2000.0)
       AvgSpeed[i] = avg1;
     AvgThrottle[i] = avg2;
     avg1 = 0;
     avg2 = 0;
     i++;
-    cout << i2 << endl;
   }
 
   //****************START WINDOW RENDER****************//
   Time elapsed1 = fps.getElapsedTime();
   RenderWindow window(VideoMode(1920, 1080), "Gran Turismo Visulalizer");
-  window.setVerticalSyncEnabled(true);
+  window.setFramerateLimit(120);
   window.setKeyRepeatEnabled(false);
-  font.loadFromFile("Anta-Regular.ttf");
+  font.loadFromFile("Silkscreen-Regular.ttf");
   bool keys[8]; // W, A, S, D, Up, Down, Left, Right
   bool replay;
   while (window.isOpen())
@@ -296,6 +343,10 @@ int main()
         window.close();
       if (event.type == sf::Event::MouseWheelScrolled)
         zoom += event.mouseWheelScroll.delta;
+      if (event.type == sf::Event::MouseButtonPressed)
+        mouseState = true;
+      if (event.type == sf::Event::MouseButtonReleased)
+        mouseState = false;
       if (event.type == sf::Event::KeyPressed)
       {
         if (event.key.code == sf::Keyboard::W)
@@ -320,14 +371,16 @@ int main()
           window.close();
         if (event.key.code == sf::Keyboard::Num1)
         {
-          if(lap != 0){
+          if (lap != 0)
+          {
             lap--;
             lapIndex = laps[lap];
           }
         }
         if (event.key.code == sf::Keyboard::Num2)
         {
-          if(lap != d3[lapIndex + 7]){
+          if (lap != d3[lapIndex + 7])
+          {
             lap++;
             lapIndex = laps[lap];
           }
@@ -355,7 +408,7 @@ int main()
           keys[7] = false;
       }
     }
-    float offset = (100 - zoom) / 60;
+    float offset = 1.5;
     if (keys[0])
       YOff += offset;
     if (keys[1])
@@ -376,7 +429,8 @@ int main()
       if (zoom < 100.0)
         zoom += 0.1;
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::X))
-      zoom -= 0.1;
+      if (zoom > 0)
+        zoom -= 0.1;
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::R))
     {
       XOff = 0;
@@ -390,89 +444,235 @@ int main()
     window.clear();
     for (int i = laps[lap]; i < laps[lap + 1] - packetLength * 2; i += packetLength)
     {
-      CompleteRotation(d1[i], d3[i], d2[i]);
+      CompleteRotation(d1[i], d3[i], d2[i] * 5);
       float ConX2 = ConX;
       float ConY2 = ConY;
-      CompleteRotation(d1[i + packetLength * 4], d3[i + packetLength * 4], d2[i + packetLength * 4]);
-      window.draw(convertToLengthAndRotation(ConX2 + XOff, ConY2 + YOff, ConX + XOff, ConY + YOff, 5, i, d1[i + 1] * 3.6, d2[i + 8]));
+      CompleteRotation(d1[i + packetLength * 4], d3[i + packetLength * 4], d2[i + packetLength * 4] * 5);
+      window.draw(drawTrack(ConX2 + XOff, ConY2 + YOff, ConX + XOff, ConY + YOff, 5, i, d1[i + 1] * 3.6, d2[i + 8], d2[i + 11]));
     }
-    window.draw(background(5, 5, 370, 185));
+    window.draw(background(InfoX, InfoY, 370, 185));
 
-    window.draw(drawText(10, 5, 24, "Lap: " + to_string(lap) + " of " + to_string((int)d3[lapIndex + 7]), 1));
-    window.draw(drawText(10, 35, 24, "Current: " + convertToTimestamp(), 1));
-    if(last[lap - 1] != "00:00.001")
-      window.draw(drawText(10, 65, 24, "Last: " + last[lap - 1], 1));
+    window.draw(drawText(InfoX + 5, InfoY, 24, "Lap: " + to_string(lap) + " of " + to_string((int)d3[((DataLength - 1) * packetLength) + 2]), Color(255, 255, 255), 1));
+    window.draw(drawText(InfoX + 5, InfoY + 30, 24, "Current: " + convertToTimestamp(), Color(255, 255, 255), 1));
+    if (last[lap - 1] != "00:00.001 " && lap != 0)
+      window.draw(drawText(InfoX + 5, InfoY + 60, 24, "Last: " + last[lap - 1], Color(255, 255, 255), 1));
     else
-      window.draw(drawText(10, 65, 24, "Last: --:--.---", 1));
-    if(best[lap - 1] != "00:00.001")
-      window.draw(drawText(10, 95, 24, "Best: " + best[lap - 1], 1));
+      window.draw(drawText(InfoX + 5, InfoY + 60, 24, "Last: --:--.---", Color(255, 255, 255), 1));
+    if (best[lap - 1] != "00:00.001 " && lap != 0)
+      window.draw(drawText(InfoX + 5, InfoY + 90, 24, "Best: " + best[lap - 1], Color(255, 255, 255), 1));
     else
-      window.draw(drawText(10, 95, 24, "Best: --:--.---", 1));
-    window.draw(drawText(10, 125, 24, "Avg Speed: " + to_string(AvgSpeed[lap]) + "km/h", 1));
-    window.draw(drawText(10, 155, 24, "Avg Throttle: " + to_string(AvgThrottle[lap]) + "%", 1));
+      window.draw(drawText(InfoX + 5, InfoY + 90, 24, "Best: --:--.---", Color(255, 255, 255), 1));
+    window.draw(drawText(InfoX + 5, InfoY + 120, 24, "Avg Speed: " + average(AvgSpeed[lap], 2) + "km/h", Color(255, 255, 255), 1));
+    window.draw(drawText(InfoX + 5, InfoY + 150, 24, "Avg Throttle: " + average(AvgThrottle[lap], 2) + "%", Color(255, 255, 255), 1));
 
-    window.draw(background(1470, 5, 440, 130));
+    window.draw(background(CarDataX, CarDataY, 480, 130));
 
-    window.draw(drawText(1920 - 220, 8, 24, "RPM", 1));
-    window.draw(drawGauge(1920 - 220, 34, 200, d1[lapIndex + 8], d2[lapIndex + 1]));
-    window.draw(drawText(1920 - 215, 34, 24, to_string((int)d2[lapIndex + 1]), 1));
+    window.draw(drawText(CarDataX + 227, CarDataY + 3, 24, "RPM", Color(255, 255, 255), 1));
+    window.draw(drawRect(CarDataX + 230, CarDataY + 29, 200, 30, Color(50, 50, 50)));
+    window.draw(drawGauge(CarDataX + 230, CarDataY + 29, 200, d1[lapIndex + 8], d2[lapIndex + 1]));
+    window.draw(drawText(CarDataX + 235, CarDataY + 29, 24, to_string((int)d2[lapIndex + 1]), Color(255, 255, 255), 1));
 
-    window.draw(drawText(1920 - 440, 8, 24, "km/h", 1));
-    window.draw(drawGauge(1920 - 440, 34, 200, d2[lapIndex + 8], d1[lapIndex + 1] * 3.6));
-    window.draw(drawText(1920 - 435, 34, 24, to_string((int)(d1[lapIndex + 1] * 3.6)), 1));
+    window.draw(drawText(CarDataX + 7, CarDataY + 3, 24, "km/h", Color(255, 255, 255), 1));
+    window.draw(drawRect(CarDataX + 10, CarDataY + 29, 200, 30, Color(50, 50, 50)));
+    window.draw(drawGauge(CarDataX + 10, CarDataY + 29, 200, d2[lapIndex + 8], d1[lapIndex + 1] * 3.6));
+    window.draw(drawText(CarDataX + 15, CarDataY + 29, 24, to_string((int)(d1[lapIndex + 1] * 3.6)), Color(255, 255, 255), 1));
 
-    window.draw(drawText(1920 - 220, 68, 24, "Boost Pressure", 1));
-    window.draw(drawGauge(1920 - 220, 94, 200, 6, d1[lapIndex + 7]));
-    window.draw(drawText(1920 - 215, 94, 24, to_string(d1[lapIndex + 7] - 1), 1));
+    window.draw(drawText(CarDataX + 227, CarDataY + 63, 24, "Boost Pressure", Color(255, 255, 255), 1));
+    window.draw(drawRect(CarDataX + 230, CarDataY + 89, 200, 30, Color(50, 50, 50)));
+    window.draw(drawGauge(CarDataX + 230, CarDataY + 89, 200, 6, d1[lapIndex + 7]));
+    window.draw(drawText(CarDataX + 235, CarDataY + 89, 24, average(d1[lapIndex + 7] - 1, 2), Color(255, 255, 255), 1));
+    window.draw(drawText(CarDataX + 325, CarDataY + 89, 24, "Atm", Color(255, 255, 255), 1));
 
-    window.draw(drawText(1920 - 440, 68, 24, "Oil Pressure", 1));
-    window.draw(drawGauge(1920 - 440, 94, 200, 8, d2[lapIndex + 7]));
-    window.draw(drawText(1920 - 435, 94, 24, to_string(d2[lapIndex + 7]), 1));
+    window.draw(drawText(CarDataX + 7, CarDataY + 63, 24, "Oil Pressure", Color(255, 255, 255), 1));
+    window.draw(drawRect(CarDataX + 10, CarDataY + 89, 200, 30, Color(50, 50, 50)));
+    window.draw(drawGauge(CarDataX + 10, CarDataY + 89, 200, 8, d2[lapIndex + 7]));
+    window.draw(drawText(CarDataX + 15, CarDataY + 89, 24, average(d2[lapIndex + 7], 2), Color(255, 255, 255), 1));
+    window.draw(drawText(CarDataX + 100, CarDataY + 89, 24, "Atm", Color(255, 255, 255), 1));
 
-    if (d3[lapIndex + 1] != 15)
-      window.draw(drawText(1800, 8, 24, "Gear: " + to_string((int)d3[lapIndex + 1]), 1));
-    else
-      window.draw(drawText(1800, 8, 24, "Gear: N", 1));
+    if (d3[lapIndex + 1] > 0 && d3[lapIndex + 1] < 8)
+      window.draw(drawText(CarDataX + 330, CarDataY + 3, 24, "Gear: " + to_string((int)d3[lapIndex + 1]), Color(255, 255, 255), 1));
+    else if(d3[lapIndex + 1] == 0)
+      window.draw(drawText(CarDataX + 330, CarDataY + 3, 24, "Gear: R", Color(255, 255, 255), 1));
+    else 
+      window.draw(drawText(CarDataX + 330, CarDataY + 3, 24, "Gear: N", Color(255, 255, 255), 1));
 
-    window.draw(background(1670, 140, 140, 170));
+    window.draw(background(WheelDataX, WheelDataY, 200, 200)); // 140
 
-    window.draw(drawSuspension(1710, 180, 80, d1[lapIndex + 3]));
-    window.draw(drawWheel(1710, d3[lapIndex + 5]));
-    window.draw(drawText(1705, 150, 24, to_string((int)d3[lapIndex + 5]) + "C", 0));
+    float tyreSlip = TyreDistanceRelativity(d1[lapIndex + 13], d2[lapIndex + 4], d1[lapIndex + 1]);
+    window.draw(drawRect(WheelDataX + 10, WheelDataY + 15, 80, 80, Color(255, 0, 0, limit(tyreSlip * 25))));
+    window.draw(drawSuspension(WheelDataX + 55, WheelDataY + 50, 80, d1[lapIndex + 3]));
+    window.draw(drawWheel(WheelDataX + 55, d3[lapIndex + 5]));
+    window.draw(drawText(WheelDataX + 48, WheelDataY + 31, 16, to_string((int)abs(d2[lapIndex + 4])) + "RPS", Color(255, 255, 255), 0));
+    window.draw(drawText(WheelDataX + 48, WheelDataY + 18, 16, to_string((int)d3[lapIndex + 5]) + "C", Color(255, 255, 255), 0));
 
-    window.draw(drawSuspension(1780, 180, 80, d2[lapIndex + 3]));
-    window.draw(drawWheel(1780, d1[lapIndex + 6]));
-    window.draw(drawText(1775, 150, 24, to_string((int)d1[lapIndex + 6]) + "C", 0));
+    tyreSlip = TyreDistanceRelativity(d2[lapIndex + 13], d3[lapIndex + 4], d1[lapIndex + 1]);
+    window.draw(drawRect(WheelDataX + 110, WheelDataY + 15, 80, 80, Color(255, 0, 0, limit(tyreSlip * 25))));
+    window.draw(drawSuspension(WheelDataX + 155, WheelDataY + 50, 80, d2[lapIndex + 3]));
+    window.draw(drawWheel(WheelDataX + 155, d1[lapIndex + 6]));
+    window.draw(drawText(WheelDataX + 148, WheelDataY + 31, 16, to_string((int)abs(d3[lapIndex + 4])) + "RPS", Color(255, 255, 255), 0));
+    window.draw(drawText(WheelDataX + 148, WheelDataY + 18, 16, to_string((int)d1[lapIndex + 6]) + "C", Color(255, 255, 255), 0));
 
-    window.draw(drawSuspension(1710, 260, 80, d3[lapIndex + 3]));
-    window.draw(drawWheel(1710, d2[lapIndex + 6]));
-    window.draw(drawText(1705, 230, 24, to_string((int)d2[lapIndex + 6]) + "C", 0));
+    tyreSlip = TyreDistanceRelativity(d3[lapIndex + 13], d1[lapIndex + 5], d1[lapIndex + 1]);
+    window.draw(drawRect(WheelDataX + 10, WheelDataY + 105, 80, 80, Color(255, 0, 0, limit(tyreSlip * 25))));
+    window.draw(drawSuspension(WheelDataX + 55, WheelDataY + 140, 80, d3[lapIndex + 3]));
+    window.draw(drawWheel(WheelDataX + 55, d2[lapIndex + 6]));
+    window.draw(drawText(WheelDataX + 48, WheelDataY + 121, 16, to_string((int)abs(d1[lapIndex + 5])) + "RPS", Color(255, 255, 255), 0));
+    window.draw(drawText(WheelDataX + 48, WheelDataY + 108, 16, to_string((int)d2[lapIndex + 6]) + "C", Color(255, 255, 255), 0));
 
-    window.draw(drawSuspension(1780, 260, 80, d1[lapIndex + 4]));
-    window.draw(drawWheel(1780, d3[lapIndex + 6]));
-    window.draw(drawText(1775, 230, 24, to_string((int)d3[lapIndex + 6]) + "C", 0));
+    tyreSlip = TyreDistanceRelativity(d1[lapIndex + 14], d2[lapIndex + 5], d1[lapIndex + 1]);
+    window.draw(drawRect(WheelDataX + 110, WheelDataY + 105, 80, 80, Color(255, 0, 0, limit(tyreSlip * 25))));
+    window.draw(drawSuspension(WheelDataX + 155, WheelDataY + 140, 80, d1[lapIndex + 4]));
+    window.draw(drawWheel(WheelDataX + 155, d3[lapIndex + 6]));
+    window.draw(drawText(WheelDataX + 148, WheelDataY + 121, 16, to_string((int)abs(d2[lapIndex + 5])) + "RPS", Color(255, 255, 255), 0));
+    window.draw(drawText(WheelDataX + 148, WheelDataY + 108, 16, to_string((int)d3[lapIndex + 6]) + "C", Color(255, 255, 255), 0));
 
-    window.draw(background(1820, 140, 90, 147));
+    window.draw(background(PedalDataX, PedalDataY, 90, 147));
 
-    window.draw(drawPedalInput(1830, 277, d1[lapIndex + 2], Color(0, 255, 0)));
-    window.draw(drawPedalInput(1850, 277, d2[lapIndex + 2], Color(255, 0, 0)));
-    window.draw(drawPedalInput(1880, 277, d3[lapIndex + 8], Color(0, 0, 255)));
+    window.draw(drawPedalInput(PedalDataX + 10, PedalDataY + 137, d1[lapIndex + 2], Color(0, 255, 0)));
+    window.draw(drawPedalInput(PedalDataX + 30, PedalDataY + 137, d2[lapIndex + 2], Color(255, 0, 0)));
+    window.draw(drawPedalInput(PedalDataX + 50, PedalDataY + 137, d3[lapIndex + 8], Color(0, 0, 255)));
+
+    window.draw(drawText(10, 920, 16, "Sample " + to_string((int)singleLapIndex) + " of " + to_string((int)DataLength), Color(255, 255, 255), 1));
+    window.draw(background(10, 900, 1900, 20));
+    for(int i = 0; i < d3[((DataLength - 1) * packetLength) + 2]; i++){
+      x = (((float)laps[i] / (float)(DataLength * packetLength)) * 1900) + 10;
+      window.draw(drawRect(x, 900, 3, 20, Color(180, 180, 180)));
+    }
+    x = (((float)singleLapIndex / (float)DataLength) * 1900) + 10;
+    window.draw(drawRect(x, 900, 3, 20, Color(255, 0, 0)));
+
+    window.draw(background(AssistX, AssistY, 180, 60));
+    window.draw(drawCircle(AssistX + 10, AssistY + 10, 20, Color(255, 255 - (d1[lapIndex + 10] * 255), 255 - (d1[lapIndex + 10] * 255))));
+    window.draw(drawText(AssistX + 28, AssistY + 20, 16, "HB", Color(0, 0, 0), 0));
+    window.draw(drawCircle(AssistX + 70, AssistY + 10, 20, Color(255, 255 - (d2[lapIndex + 10] * 255), 255 - (d2[lapIndex + 10] * 255))));
+    window.draw(drawText(AssistX + 88, AssistY + 20, 16, "TCS", Color(0, 0, 0), 0));
+    window.draw(drawCircle(AssistX + 130, AssistY + 10, 20, Color(255, 255 - (d3[lapIndex + 10] * 255), 255 - (d3[lapIndex + 10] * 255))));
+    window.draw(drawText(AssistX + 148, AssistY + 20, 16, "ASM", Color(0, 0, 0), 0));
+
+    // window.draw(drawText(1600, 280, 24, to_string((int)d3[lapIndex + 14]) + "L/" + to_string((int)d2[lapIndex + 14]) + "L", Color(255, 255, 255), 0));
 
     Time elapsed1 = fps.restart();
-    window.draw(drawText(0, 960, 24, to_string((int)(1 / elapsed1.asSeconds())) + " FPS", 1));
+    window.draw(drawText(0, 935, 24, to_string((int)(1 / elapsed1.asSeconds())) + " FPS", Color(255, 255, 255), 1));
 
     window.display();
     if (replay)
     {
-      lapIndex += packetLength;
-      if (lapIndex > laps[lap + 1])
+      delta += 60 / (1 / elapsed1.asSeconds());
+      singleLapIndex = floor(delta);
+      lapIndex = singleLapIndex * packetLength;
+      lapCheck();
+    }
+    Vector2i pixelPos = sf::Mouse::getPosition(window);
+    if (pixelPos.x > InfoX && pixelPos.x < InfoX + 370 && pixelPos.y > InfoY && pixelPos.y < InfoY + 185 || infoT)
+    {
+      if (mouseState)
       {
-        if (laps[lap] == 0)
+        if (!infoT)
         {
-          lap--;
-        } else{
-          lap++;
+          relativeX = pixelPos.x - InfoX;
+          relativeY = pixelPos.y - InfoY;
         }
+        InfoX = pixelPos.x - relativeX;
+        InfoY = pixelPos.y - relativeY;
+        infoT = true;
+      }
+      else
+      {
+        infoT = false;
+      }
+    } else if (pixelPos.x > CarDataX && pixelPos.x < CarDataX + 440 && pixelPos.y > CarDataY && pixelPos.y < CarDataY + 130 || carT)
+    {
+      if (mouseState)
+      {
+        if (!carT)
+        {
+          relativeX = pixelPos.x - CarDataX;
+          relativeY = pixelPos.y - CarDataY;
+        }
+        CarDataX = pixelPos.x - relativeX;
+        CarDataY = pixelPos.y - relativeY;
+        carT = true;
+      }
+      else
+      {
+        carT = false;
+      }
+    } else if (pixelPos.x > WheelDataX && pixelPos.x < WheelDataX + 140 && pixelPos.y > WheelDataY && pixelPos.y < WheelDataY + 200 || wheelT)
+    {
+      if (mouseState)
+      {
+        if (!wheelT)
+        {
+          relativeX = pixelPos.x - WheelDataX;
+          relativeY = pixelPos.y - WheelDataY;
+        }
+        WheelDataX = pixelPos.x - relativeX;
+        WheelDataY = pixelPos.y - relativeY;
+        wheelT = true;
+      }
+      else
+      {
+        wheelT = false;
+      }
+    } else if (pixelPos.x > PedalDataX && pixelPos.x < PedalDataX + 90 && pixelPos.y > PedalDataY && pixelPos.y < PedalDataY + 147 || pedalT)
+    {
+      if (mouseState)
+      {
+        if (!pedalT)
+        {
+          relativeX = pixelPos.x - PedalDataX;
+          relativeY = pixelPos.y - PedalDataY;
+        }
+        PedalDataX = pixelPos.x - relativeX;
+        PedalDataY = pixelPos.y - relativeY;
+        pedalT = true;
+      }
+      else
+      {
+        pedalT = false;
+      }
+    } else if (pixelPos.x > x && pixelPos.x < (x + 20) && pixelPos.y > 900 && pixelPos.y < 920 || seekT)
+    {
+      if (mouseState && pixelPos.x > 10 && pixelPos.x < 1900)
+      {
+        seekT = true;
+        singleLapIndex = (DataLength / 1900) * (pixelPos.x - 10);
+        delta = singleLapIndex;
+        lapIndex = singleLapIndex * packetLength;
+        lapCheck();
+      }
+      else
+      {
+        seekT = false;
+      }
+    } else if (pixelPos.x > AssistX && pixelPos.x < AssistX + 180 && pixelPos.y > AssistY && pixelPos.y < AssistY + 60 || AssistT)
+    {
+      if (mouseState)
+      {
+        if (!AssistT)
+        {
+          relativeX = pixelPos.x - AssistX;
+          relativeY = pixelPos.y - AssistY;
+        }
+        AssistX = pixelPos.x - relativeX;
+        AssistY = pixelPos.y - relativeY;
+        AssistT = true;
+      }
+      else
+      {
+        AssistT = false;
+      }
+    } else{
+      if(mouseState){
+        if(!TrackT){
+          relativeX = (pixelPos.x / zoom) - XOff;
+          relativeY = (pixelPos.y / zoom) - YOff;
+        }
+        XOff = (pixelPos.x / zoom) - relativeX;
+        YOff = (pixelPos.y / zoom) - relativeY;
+        TrackT = true;
+      } else{ 
+        TrackT = false;
       }
     }
   }
